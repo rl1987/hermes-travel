@@ -4,61 +4,40 @@ from pathlib import Path
 
 try:
     from . import schemas, tools
-except ImportError:  # loaded outside a package (e.g. pytest parent collection)
+except ImportError:
     schemas = tools = None  # type: ignore
+
+_TOOL_NAMES = [
+    "search_booking",
+    "search_airbnb",
+    "search_agoda",
+    "search_hostelworld",
+    "search_flixbus",
+    "search_rome2rio",
+    "search_redbus",
+    "changi_timetable",
+    "compare_stays",
+    "plan_leg",
+]
 
 
 def register(ctx):
     if schemas is None or tools is None:
         raise ImportError("plugin must be imported as a package")
-    ctx.register_tool(
-        name="search_booking",
-        toolset="travel",
-        schema=schemas.SEARCH_BOOKING,
-        handler=tools.search_booking,
-    )
-    ctx.register_tool(
-        name="search_airbnb",
-        toolset="travel",
-        schema=schemas.SEARCH_AIRBNB,
-        handler=tools.search_airbnb,
-    )
-    ctx.register_tool(
-        name="search_agoda",
-        toolset="travel",
-        schema=schemas.SEARCH_AGODA,
-        handler=tools.search_agoda,
-    )
-    ctx.register_tool(
-        name="search_hostelworld",
-        toolset="travel",
-        schema=schemas.SEARCH_HOSTELWORLD,
-        handler=tools.search_hostelworld,
-    )
-    ctx.register_tool(
-        name="search_flixbus",
-        toolset="travel",
-        schema=schemas.SEARCH_FLIXBUS,
-        handler=tools.search_flixbus,
-    )
-    ctx.register_tool(
-        name="search_rome2rio",
-        toolset="travel",
-        schema=schemas.SEARCH_ROME2RIO,
-        handler=tools.search_rome2rio,
-    )
-    ctx.register_tool(
-        name="search_redbus",
-        toolset="travel",
-        schema=schemas.SEARCH_REDBUS,
-        handler=tools.search_redbus,
-    )
-    ctx.register_tool(
-        name="changi_timetable",
-        toolset="travel",
-        schema=schemas.CHANGI_TIMETABLE,
-        handler=tools.changi_timetable,
-    )
+    mapping = [
+        (schemas.SEARCH_BOOKING, tools.search_booking),
+        (schemas.SEARCH_AIRBNB, tools.search_airbnb),
+        (schemas.SEARCH_AGODA, tools.search_agoda),
+        (schemas.SEARCH_HOSTELWORLD, tools.search_hostelworld),
+        (schemas.SEARCH_FLIXBUS, tools.search_flixbus),
+        (schemas.SEARCH_ROME2RIO, tools.search_rome2rio),
+        (schemas.SEARCH_REDBUS, tools.search_redbus),
+        (schemas.CHANGI_TIMETABLE, tools.changi_timetable),
+        (schemas.COMPARE_STAYS, tools.compare_stays),
+        (schemas.PLAN_LEG, tools.plan_leg),
+    ]
+    for schema, handler in mapping:
+        ctx.register_tool(name=schema["name"], toolset="travel", schema=schema, handler=handler)
 
     here = Path(__file__).resolve().parent
     skills_dir = here / "skills"

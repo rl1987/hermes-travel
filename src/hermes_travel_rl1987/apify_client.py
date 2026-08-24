@@ -17,7 +17,7 @@ from typing import Any
 API_BASE = "https://api.apify.com/v2"
 DEFAULT_TIMEOUT_S = 120
 POLL_INTERVAL_S = 2.0
-MAX_ITEMS = 20
+MAX_ITEMS = 8
 TERMINAL = frozenset({"SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT", "TIMED_OUT"})
 
 

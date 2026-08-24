@@ -1,31 +1,41 @@
 ---
 name: travel-trip
-description: Plan trips using only the eight rl1987 travel tools (Booking, Airbnb, Agoda, Hostelworld, FlixBus, Rome2Rio, redBus, Changi timetable).
+description: Plan a trip for a traveler — stays, routes, and comparisons using destination and dates.
 ---
 
-# Plan a trip with rl1987 travel tools
+# Plan a trip
 
-Use **only** these tools. Do not call Bright Data, generic web scrape, or any Apify Actor that is not owned by `rl1987`.
+You are helping a traveler. Ask for cities, dates, party size, budget, and lodging style when those are missing. Prefer live tools over guessing inventory.
 
-## When to use which tool
+## Stays
 
-1. **Door-to-door options** — `search_rome2rio` with `origin` + `destination`. Add `departureDate` if the user has a day. Keep `includeHotels` off; use lodging tools instead.
-2. **Europe coaches** — `search_flixbus` (`fromCity`, `toCity`, `departureDate`).
-3. **India / redBus markets** — `search_redbus` (`source`, `destination`, `dateOfJourney`, optional `country`).
-4. **Singapore Changi flights** — `changi_timetable` (`direction` arr/dep/both, `scheduledDate`, optional `terminal`). Not a worldwide flight search.
-5. **Hotels (global, live rates)** — `search_booking` (`search`, `checkin`, `checkout`, `rooms`, `adults`, `currency`, `maxItems` default 20). Set `includeDetails` only if you need facilities/address.
-6. **Hotels (Asia-heavy inventory)** — `search_agoda` with the same stay fields.
-7. **Homes / rooms** — `search_airbnb` (`search`, `checkIn`, `checkOut`). Leave `scrapeListingDetails` false unless the user asks for amenities.
-8. **Hostels / dorms** — `search_hostelworld` (`q` city, `dateStart`, `numNights`, `numberOfGuests`). Prefer `includeDetails` false for a first pass.
+Use the same fields everywhere: `destination`, `checkin`, `checkout`, `guests`, optional `rooms`, `currency`, `max_price`.
+
+- Hotels: `search_booking` and/or `search_agoda`, or `compare_stays` with `lodging=hotels`.
+- Homes: `search_airbnb` or `compare_stays` with `lodging=homes`.
+- Hostels: `search_hostelworld` or `compare_stays` with `lodging=hostels`.
+- Mixed: `compare_stays` with `lodging=all`.
+
+`compare_stays` returns `{picks, note}` sorted by price then score. Leaf stay tools return `{picks}` cards.
+
+## Transport
+
+For one hop use `plan_leg(origin, destination, date, guests)`. It always includes door-to-door routes and adds coaches or Changi timetable when the places look European, India/Singapore, or mention Changi/SIN.
+
+Or call a leaf tool:
+
+- `search_rome2rio` — compare modes
+- `search_flixbus` — coaches
+- `search_redbus` — India/nearby buses
+- `changi_timetable` — Singapore airport board only
 
 ## Workflow
 
-1. Confirm cities, dates, party size, budget, and lodging style.
-2. Pull transport first (`search_rome2rio`, then FlixBus/redBus/Changi as relevant).
-3. Search lodging on the nights implied by transport. Cap results at 20.
-4. Compare 3–5 options: price, location, duration, cancellation if present.
-5. Ask before spending extra Actor credits on `includeDetails` / listing details.
+1. Confirm places, ISO dates (`YYYY-MM-DD`), guests, budget, lodging style.
+2. `plan_leg` for each hop.
+3. `compare_stays` for nights at the destination.
+4. Summarize a few cards: price, area/score, duration, operator.
+5. Do not invent sold-out inventory. If a tool returns `error`, try a sibling stay or transport tool.
 
-## Dates
-
-Pass ISO dates `YYYY-MM-DD`. Do not invent sold-out inventory. If a tool returns `error`, explain it and try a sibling lodging/transport tool rather than a non-rl1987 Actor.
+Stay cards: id, name, kind, area, price, currency, score, url, source.
+Transport cards: id, mode, from, to, depart, arrive, durationMin, price, currency, operator, url, source.

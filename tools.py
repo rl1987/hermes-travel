@@ -2,31 +2,34 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any, Callable
 
 from .apify_client import MAX_ITEMS, run_actor_and_collect
+from . import shape
 
-ACTORS = {
-    "search_booking": "rl1987~booking-api-scraper",
-    "search_airbnb": "rl1987~airbnb-api-scraper",
-    "search_agoda": "rl1987~agoda-scraper",
-    "search_hostelworld": "rl1987~hostelworld-api-scraper",
-    "search_flixbus": "rl1987~flixbus-api-scraper",
-    "search_rome2rio": "rl1987~rome2rio-api-scraper",
-    "search_redbus": "rl1987~redbus-api-scraper",
-    "changi_timetable": "rl1987~sin-airport-timetable",
+# Private internal map — never expose ids to the model.
+_ACTORS = {
+    "booking": "rl1987~booking-api-scraper",
+    "airbnb": "rl1987~airbnb-api-scraper",
+    "agoda": "rl1987~agoda-scraper",
+    "hostelworld": "rl1987~hostelworld-api-scraper",
+    "flixbus": "rl1987~flixbus-api-scraper",
+    "rome2rio": "rl1987~rome2rio-api-scraper",
+    "redbus": "rl1987~redbus-api-scraper",
+    "changi": "rl1987~sin-airport-timetable",
 }
 
 
-def _cap(value: Any, default: int = MAX_ITEMS) -> int:
+def _cap(value: Any, default: int = shape.DEFAULT_CAP) -> int:
     try:
         n = int(value)
     except (TypeError, ValueError):
         return default
     if n <= 0:
         return default
-    return min(n, MAX_ITEMS)
+    return min(n, MAX_ITEMS, shape.DEFAULT_CAP)
 
 
 def _ok_str(args: dict, *keys: str) -> str | None:
@@ -37,164 +40,289 @@ def _ok_str(args: dict, *keys: str) -> str | None:
     return None
 
 
-def _run(actor: str, payload: dict[str, Any], max_items: int = MAX_ITEMS) -> str:
+def _int(args: dict, key: str, default: int) -> int:
     try:
-        result = run_actor_and_collect(actor, payload, max_items=max_items)
-        return json.dumps(result, default=str)
-    except Exception as exc:  # noqa: BLE001 — handlers must never raise
-        return json.dumps({"error": str(exc), "actorId": actor})
+        return int(args.get(key) if args.get(key) is not None else default)
+    except (TypeError, ValueError):
+        return default
+
+
+def _price_cap(args: dict, *keys: str) -> float | None:
+    for key in keys:
+        val = args.get(key)
+        if val is None or val == "":
+            continue
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _public_error(exc: BaseException | str) -> str:
+    msg = str(exc)
+    for junk in ("actorId", "Actor ", "apify", "rl1987"):
+        msg = msg.replace(junk, "")
+    return json.dumps({"error": msg.strip() or "search failed"})
+
+
+def _collect(kind: str, payload: dict[str, Any], max_items: int = shape.DEFAULT_CAP) -> dict[str, Any]:
+    actor = _ACTORS[kind]
+    result = run_actor_and_collect(actor, payload, max_items=max_items)
+    return result if isinstance(result, dict) else {"error": "empty"}
+
+
+def _stay_result(kind: str, payload: dict[str, Any], *, max_price: float | None = None) -> str:
+    try:
+        raw = _collect(kind, payload)
+        if raw.get("error"):
+            return json.dumps({"error": str(raw.get("message") or raw["error"])})
+        picks = shape.shape_stays(raw.get("items") or [], kind, cap=shape.DEFAULT_CAP, max_price=max_price)
+        return json.dumps({"picks": picks})
+    except Exception as exc:  # noqa: BLE001
+        return _public_error(exc)
+
+
+def _transport_result(kind: str, payload: dict[str, Any]) -> str:
+    try:
+        raw = _collect(kind, payload)
+        if raw.get("error"):
+            return json.dumps({"error": str(raw.get("message") or raw["error"])})
+        picks = shape.shape_transport(raw.get("items") or [], kind, cap=shape.DEFAULT_CAP)
+        return json.dumps({"picks": picks})
+    except Exception as exc:  # noqa: BLE001
+        return _public_error(exc)
+
+
+def _lodging_payload_booking(args: dict) -> tuple[dict[str, Any] | None, str | None, float | None]:
+    dest = _ok_str(args, "destination", "search")
+    checkin = _ok_str(args, "checkin", "checkIn")
+    checkout = _ok_str(args, "checkout", "checkOut")
+    if not dest or not checkin or not checkout:
+        return None, "Need destination, checkin, and checkout", None
+    guests = _int(args, "guests", _int(args, "adults", 2))
+    rooms = _int(args, "rooms", 1)
+    currency = _ok_str(args, "currency") or "USD"
+    max_price = _price_cap(args, "max_price", "budget")
+    payload = {
+        "search": dest,
+        "checkin": checkin,
+        "checkout": checkout,
+        "rooms": rooms,
+        "adults": guests,
+        "currency": currency,
+        "maxItems": shape.DEFAULT_CAP,
+    }
+    return payload, None, max_price
+
+
+def _lodging_payload_airbnb(args: dict) -> tuple[dict[str, Any] | None, str | None, float | None]:
+    dest = _ok_str(args, "destination", "search")
+    checkin = _ok_str(args, "checkin", "checkIn")
+    checkout = _ok_str(args, "checkout", "checkOut")
+    if not dest or not checkin or not checkout:
+        return None, "Need destination, checkin, and checkout", None
+    payload = {
+        "searchQueries": [dest],
+        "checkIn": checkin,
+        "checkOut": checkout,
+        "maxListingsPerQuery": shape.DEFAULT_CAP,
+        "scrapeListingDetails": False,
+        "scrapeReviews": False,
+    }
+    return payload, None, _price_cap(args, "max_price", "budget")
+
+
+def _lodging_payload_hostel(args: dict) -> tuple[dict[str, Any] | None, str | None, float | None]:
+    dest = _ok_str(args, "destination", "search", "q")
+    checkin = _ok_str(args, "checkin", "checkIn", "dateStart")
+    checkout = _ok_str(args, "checkout", "checkOut")
+    if not dest:
+        return None, "Need destination, checkin, and checkout", None
+    nights = shape.nights_between(checkin, checkout)
+    payload: dict[str, Any] = {
+        "q": dest,
+        "maxItems": shape.DEFAULT_CAP,
+        "numberOfGuests": _int(args, "guests", _int(args, "numberOfGuests", 2)),
+        "numNights": nights,
+        "currency": _ok_str(args, "currency") or "EUR",
+        "includeDetails": False,
+    }
+    if checkin:
+        payload["dateStart"] = checkin
+    return payload, None, _price_cap(args, "max_price", "budget")
 
 
 def search_booking(args: dict, **kwargs) -> str:
-    search = _ok_str(args, "search")
-    checkin = _ok_str(args, "checkin")
-    checkout = _ok_str(args, "checkout")
-    if not search or not checkin or not checkout:
-        return json.dumps({"error": "Need search, checkin, and checkout"})
-    max_items = _cap(args.get("maxItems"))
-    payload: dict[str, Any] = {
-        "search": search,
-        "checkin": checkin,
-        "checkout": checkout,
-        "rooms": int(args.get("rooms") or 1),
-        "adults": int(args.get("adults") or 2),
-        "currency": _ok_str(args, "currency") or "USD",
-        "maxItems": max_items,
-    }
-    if args.get("includeDetails") is not None:
-        payload["includeDetails"] = bool(args.get("includeDetails"))
-    return _run(ACTORS["search_booking"], payload, max_items)
+    payload, err, max_price = _lodging_payload_booking(args)
+    if err:
+        return json.dumps({"error": err})
+    return _stay_result("booking", payload or {}, max_price=max_price)
 
 
 def search_airbnb(args: dict, **kwargs) -> str:
-    search = _ok_str(args, "search", "query")
-    check_in = _ok_str(args, "checkIn", "checkin")
-    check_out = _ok_str(args, "checkOut", "checkout")
-    if not search or not check_in or not check_out:
-        return json.dumps({"error": "Need search, checkIn, and checkOut"})
-    max_items = _cap(args.get("maxListingsPerQuery") or args.get("maxItems"))
-    payload: dict[str, Any] = {
-        "searchQueries": [search],
-        "checkIn": check_in,
-        "checkOut": check_out,
-        "maxListingsPerQuery": max_items,
-        "scrapeListingDetails": bool(args.get("scrapeListingDetails", False)),
-        "scrapeReviews": False,
-    }
-    return _run(ACTORS["search_airbnb"], payload, max_items)
+    payload, err, max_price = _lodging_payload_airbnb(args)
+    if err:
+        return json.dumps({"error": err})
+    return _stay_result("airbnb", payload or {}, max_price=max_price)
 
 
 def search_agoda(args: dict, **kwargs) -> str:
-    search = _ok_str(args, "search")
-    checkin = _ok_str(args, "checkin")
-    checkout = _ok_str(args, "checkout")
-    if not search or not checkin or not checkout:
-        return json.dumps({"error": "Need search, checkin, and checkout"})
-    max_items = _cap(args.get("maxItems"))
-    payload: dict[str, Any] = {
-        "search": search,
-        "checkin": checkin,
-        "checkout": checkout,
-        "rooms": int(args.get("rooms") or 1),
-        "adults": int(args.get("adults") or 2),
-        "currency": _ok_str(args, "currency") or "USD",
-        "maxItems": max_items,
-        "includeDetails": bool(args.get("includeDetails", False)),
-    }
-    return _run(ACTORS["search_agoda"], payload, max_items)
+    payload, err, max_price = _lodging_payload_booking(args)
+    if err:
+        return json.dumps({"error": err})
+    return _stay_result("agoda", payload or {}, max_price=max_price)
 
 
 def search_hostelworld(args: dict, **kwargs) -> str:
-    q = _ok_str(args, "q", "search")
-    if not q:
-        return json.dumps({"error": "Need q (location)"})
-    max_items = _cap(args.get("maxItems"))
-    payload: dict[str, Any] = {
-        "q": q,
-        "maxItems": max_items,
-        "numberOfGuests": int(args.get("numberOfGuests") or 2),
-        "numNights": int(args.get("numNights") or 2),
-        "currency": _ok_str(args, "currency") or "EUR",
-        "includeDetails": bool(args.get("includeDetails", False)),
-    }
-    date_start = _ok_str(args, "dateStart", "checkin")
-    if date_start:
-        payload["dateStart"] = date_start
-    return _run(ACTORS["search_hostelworld"], payload, max_items)
+    payload, err, max_price = _lodging_payload_hostel(args)
+    if err:
+        return json.dumps({"error": err})
+    return _stay_result("hostelworld", payload or {}, max_price=max_price)
 
 
 def search_flixbus(args: dict, **kwargs) -> str:
-    from_city = _ok_str(args, "fromCity")
-    to_city = _ok_str(args, "toCity")
-    departure = _ok_str(args, "departureDate")
-    if not from_city or not to_city or not departure:
-        return json.dumps({"error": "Need fromCity, toCity, and departureDate"})
-    payload: dict[str, Any] = {
-        "fromCity": from_city,
-        "toCity": to_city,
-        "departureDate": departure,
-        "adults": int(args.get("adults") or 1),
-        "locale": _ok_str(args, "locale") or "en",
+    origin = _ok_str(args, "origin", "fromCity")
+    dest = _ok_str(args, "destination", "toCity")
+    date = _ok_str(args, "date", "departureDate")
+    if not origin or not dest or not date:
+        return json.dumps({"error": "Need origin, destination, and date"})
+    payload = {
+        "fromCity": origin,
+        "toCity": dest,
+        "departureDate": date,
+        "adults": _int(args, "guests", _int(args, "adults", 1)),
+        "locale": "en",
         "currency": _ok_str(args, "currency") or "EUR",
     }
-    return _run(ACTORS["search_flixbus"], payload)
+    return _transport_result("flixbus", payload)
 
 
 def search_rome2rio(args: dict, **kwargs) -> str:
     origin = _ok_str(args, "origin")
-    destination = _ok_str(args, "destination")
-    if not origin or not destination:
+    dest = _ok_str(args, "destination")
+    if not origin or not dest:
         return json.dumps({"error": "Need origin and destination"})
-    max_items = _cap(args.get("maxItems"))
     payload: dict[str, Any] = {
         "origin": origin,
-        "destination": destination,
+        "destination": dest,
         "currency": _ok_str(args, "currency") or "USD",
-        "language": _ok_str(args, "language") or "en",
-        "includeSchedules": bool(args.get("includeSchedules", False)),
-        "includeBookable": bool(args.get("includeBookable", False)),
-        "maxItems": max_items,
+        "language": "en",
+        "includeSchedules": False,
+        "includeBookable": False,
+        "maxItems": shape.DEFAULT_CAP,
         "includeHotels": False,
     }
-    departure = _ok_str(args, "departureDate")
-    if departure:
-        payload["departureDate"] = departure
-    return _run(ACTORS["search_rome2rio"], payload, max_items)
+    date = _ok_str(args, "date", "departureDate")
+    if date:
+        payload["departureDate"] = date
+    return _transport_result("rome2rio", payload)
 
 
 def search_redbus(args: dict, **kwargs) -> str:
-    source = _ok_str(args, "source")
-    destination = _ok_str(args, "destination")
-    date_of = _ok_str(args, "dateOfJourney")
-    if not source or not destination or not date_of:
-        return json.dumps({"error": "Need source, destination, and dateOfJourney"})
-    max_items = _cap(args.get("maxItems"))
-    payload: dict[str, Any] = {
-        "source": source,
-        "destination": destination,
-        "dateOfJourney": date_of,
-        "country": _ok_str(args, "country") or "india",
-        "maxItems": max_items,
-        "pageSize": min(max_items, 20),
+    origin = _ok_str(args, "origin", "source")
+    dest = _ok_str(args, "destination")
+    date = _ok_str(args, "date", "dateOfJourney")
+    if not origin or not dest or not date:
+        return json.dumps({"error": "Need origin, destination, and date"})
+    payload = {
+        "source": origin,
+        "destination": dest,
+        "dateOfJourney": date,
+        "country": "india" if shape.looks_india_or_sg(origin, dest) and "sing" not in (origin + dest).lower() else "singapore" if "sing" in (origin + dest).lower() else "india",
+        "maxItems": shape.DEFAULT_CAP,
+        "pageSize": shape.DEFAULT_CAP,
     }
-    return _run(ACTORS["search_redbus"], payload, max_items)
+    return _transport_result("redbus", payload)
 
 
 def changi_timetable(args: dict, **kwargs) -> str:
-    max_items = _cap(args.get("maxItems"))
     direction = (_ok_str(args, "direction") or "dep").lower()
     if direction not in {"arr", "dep", "both"}:
         direction = "dep"
-    terminal = (_ok_str(args, "terminal") or "all").lower()
     payload: dict[str, Any] = {
         "direction": direction,
-        "terminal": terminal,
-        "maxItems": max_items,
+        "terminal": "all",
+        "maxItems": shape.DEFAULT_CAP,
     }
-    scheduled = _ok_str(args, "scheduledDate")
-    if scheduled:
-        payload["scheduledDate"] = scheduled
-    return _run(ACTORS["changi_timetable"], payload, max_items)
+    date = _ok_str(args, "date", "scheduledDate")
+    if date:
+        payload["scheduledDate"] = date
+    return _transport_result("changi", payload)
+
+
+def _parse_picks(raw: str) -> list[dict[str, Any]]:
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if isinstance(data, dict) and isinstance(data.get("picks"), list):
+        return data["picks"]
+    return []
+
+
+def compare_stays(args: dict, **kwargs) -> str:
+    dest = _ok_str(args, "destination")
+    checkin = _ok_str(args, "checkin")
+    checkout = _ok_str(args, "checkout")
+    if not dest or not checkin or not checkout:
+        return json.dumps({"error": "Need destination, checkin, and checkout"})
+    lodging = (_ok_str(args, "lodging") or "all").lower()
+    if lodging not in {"hotels", "homes", "hostels", "all"}:
+        lodging = "all"
+    fns: list[Callable[[], str]] = []
+    if lodging in {"hotels", "all"}:
+        fns.append(lambda: search_booking(args))
+        fns.append(lambda: search_agoda(args))
+    if lodging in {"homes", "all"}:
+        fns.append(lambda: search_airbnb(args))
+    if lodging in {"hostels", "all"}:
+        fns.append(lambda: search_hostelworld(args))
+
+    async def _run_all() -> list[str]:
+        return list(await asyncio.gather(*[asyncio.to_thread(fn) for fn in fns]))
+
+    try:
+        results = asyncio.run(_run_all())
+    except RuntimeError:
+        results = [fn() for fn in fns]
+    merged: list[dict[str, Any]] = []
+    for raw in results:
+        merged.extend(_parse_picks(raw))
+    budget = _price_cap(args, "budget", "max_price")
+    if budget is not None:
+        merged = [c for c in merged if c.get("price") is None or c["price"] <= budget]
+    picks = shape.merge_cap(shape.sort_stays(merged), shape.DEFAULT_CAP)
+    note = f"{len(picks)} stay options for {dest} ({lodging})"
+    return json.dumps({"picks": picks, "note": note})
+
+
+def plan_leg(args: dict, **kwargs) -> str:
+    origin = _ok_str(args, "origin")
+    dest = _ok_str(args, "destination")
+    date = _ok_str(args, "date")
+    if not origin or not dest or not date:
+        return json.dumps({"error": "Need origin, destination, and date"})
+    fns: list[Callable[[], str]] = [lambda: search_rome2rio(args)]
+    if shape.looks_european(origin, dest):
+        fns.append(lambda: search_flixbus(args))
+    if shape.looks_india_or_sg(origin, dest):
+        fns.append(lambda: search_redbus(args))
+    if shape.looks_changi(origin, dest):
+        fns.append(lambda: changi_timetable(args))
+
+    async def _run_all() -> list[str]:
+        return list(await asyncio.gather(*[asyncio.to_thread(fn) for fn in fns]))
+
+    try:
+        results = asyncio.run(_run_all())
+    except RuntimeError:
+        results = [fn() for fn in fns]
+    merged: list[dict[str, Any]] = []
+    for raw in results:
+        merged.extend(_parse_picks(raw))
+    picks = shape.merge_cap(merged, shape.DEFAULT_CAP)
+    return json.dumps({"picks": picks, "note": f"leg {origin} → {dest} on {date}"})
 
 
 HANDLERS: dict[str, Callable] = {
@@ -206,4 +334,6 @@ HANDLERS: dict[str, Callable] = {
     "search_rome2rio": search_rome2rio,
     "search_redbus": search_redbus,
     "changi_timetable": changi_timetable,
+    "compare_stays": compare_stays,
+    "plan_leg": plan_leg,
 }

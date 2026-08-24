@@ -1,6 +1,6 @@
 name: hermes-travel-rl1987
-version: 0.1.0
-description: Travel toolkit wrapping only rl1987 Apify Actors
+version: 0.2.0
+description: Trip planner — stays and transport with comparable cards
 provides_tools:
   - search_booking
   - search_airbnb
@@ -10,9 +10,11 @@ provides_tools:
   - search_rome2rio
   - search_redbus
   - changi_timetable
+  - compare_stays
+  - plan_leg
 requires_env:
   - name: APIFY_API_TOKEN
-    description: Apify API token
+    description: Travel data API token
     url: https://console.apify.com/account/integrations
     secret: true
 python_dependencies:

@@ -1,13 +1,9 @@
 import json
 import os
-from io import BytesIO
-from unittest.mock import patch
-
-import pytest
 
 os.environ.setdefault("APIFY_API_TOKEN", "test-token")
 
-from hermes_travel_rl1987 import apify_client, tools
+from hermes_travel_rl1987 import apify_client, schemas, tools
 from hermes_travel_rl1987.apify_client import ApifyError
 
 
@@ -26,6 +22,9 @@ class _FakeResp:
         return False
 
 
+import pytest
+
+
 def test_missing_token(monkeypatch):
     monkeypatch.delenv("APIFY_API_TOKEN", raising=False)
     with pytest.raises(ApifyError, match="APIFY_API_TOKEN"):
@@ -39,17 +38,14 @@ def test_search_booking_validation():
 
 def test_search_booking_mocked_http(monkeypatch):
     monkeypatch.setenv("APIFY_API_TOKEN", "test-token")
-    calls = []
 
     def fake_urlopen(req, timeout=30):
         url = req.full_url
         method = req.get_method()
-        calls.append((method, url))
         if method == "POST" and "/acts/" in url and url.endswith("/runs"):
             assert "rl1987~booking-api-scraper" in url
             body = json.loads(req.data.decode())
             assert body["search"] == "Amsterdam"
-            assert body["maxItems"] == 20
             return _FakeResp(
                 {
                     "data": {
@@ -70,43 +66,61 @@ def test_search_booking_mocked_http(monkeypatch):
                 }
             )
         if method == "GET" and "/datasets/ds1/items" in url:
-            return _FakeResp([{"name": "Hotel A", "price": 120}])
+            return _FakeResp([{"name": "Hotel A", "price": 120, "url": "https://example.com/a"}])
         raise AssertionError(f"unexpected {method} {url}")
 
     monkeypatch.setattr(apify_client.time, "sleep", lambda *_: None)
     monkeypatch.setattr(apify_client.urllib.request, "urlopen", fake_urlopen)
     raw = tools.search_booking(
         {
-            "search": "Amsterdam",
+            "destination": "Amsterdam",
             "checkin": "2026-09-01",
             "checkout": "2026-09-03",
         }
     )
     data = json.loads(raw)
-    assert data["status"] == "SUCCEEDED"
-    assert data["count"] == 1
-    assert data["items"][0]["name"] == "Hotel A"
-    assert data["actorId"] == "rl1987~booking-api-scraper"
+    assert "actorId" not in data
+    assert "actorId" not in raw
+    assert data["picks"][0]["name"] == "Hotel A"
+    assert data["picks"][0]["source"] == "booking"
+    assert data["picks"][0]["price"] == 120
 
 
 def test_search_airbnb_maps_queries(monkeypatch):
     monkeypatch.setenv("APIFY_API_TOKEN", "test-token")
     captured = {}
 
-    def fake_run(actor, payload, max_items=20):
+    def fake_run(actor, payload, max_items=8):
         captured["actor"] = actor
         captured["payload"] = payload
-        return {"status": "SUCCEEDED", "items": [], "count": 0, "actorId": actor}
+        return {"status": "SUCCEEDED", "items": [{"title": "Loft", "price": 90}], "count": 1}
 
     monkeypatch.setattr(tools, "run_actor_and_collect", fake_run)
     raw = tools.search_airbnb(
-        {"search": "Lisbon", "checkIn": "2026-09-01", "checkOut": "2026-09-04"}
+        {"destination": "Lisbon", "checkin": "2026-09-01", "checkout": "2026-09-04"}
     )
     data = json.loads(raw)
     assert captured["actor"] == "rl1987~airbnb-api-scraper"
     assert captured["payload"]["searchQueries"] == ["Lisbon"]
     assert captured["payload"]["scrapeReviews"] is False
-    assert data["status"] == "SUCCEEDED"
+    assert "actorId" not in data
+    assert data["picks"][0]["name"] == "Loft"
+    assert data["picks"][0]["source"] == "airbnb"
+
+
+def test_hostel_nights_from_dates(monkeypatch):
+    captured = {}
+
+    def fake_run(actor, payload, max_items=8):
+        captured["payload"] = payload
+        return {"status": "SUCCEEDED", "items": [{"name": "Dorm", "price": 20}]}
+
+    monkeypatch.setattr(tools, "run_actor_and_collect", fake_run)
+    tools.search_hostelworld(
+        {"destination": "Berlin", "checkin": "2026-09-01", "checkout": "2026-09-04", "guests": 1}
+    )
+    assert captured["payload"]["numNights"] == 3
+    assert captured["payload"]["dateStart"] == "2026-09-01"
 
 
 def test_timeout_returns_json(monkeypatch):
@@ -136,11 +150,12 @@ def test_handler_never_raises(monkeypatch):
 
     monkeypatch.setattr(tools, "run_actor_and_collect", boom)
     raw = tools.search_flixbus(
-        {"fromCity": "Berlin", "toCity": "Munich", "departureDate": "2026-12-20"}
+        {"origin": "Berlin", "destination": "Munich", "date": "2026-12-20"}
     )
     data = json.loads(raw)
     assert "error" in data
     assert "network down" in data["error"]
+    assert "actorId" not in data
 
 
 def test_register_tools():
@@ -166,5 +181,81 @@ def test_register_tools():
         "search_rome2rio",
         "search_redbus",
         "changi_timetable",
+        "compare_stays",
+        "plan_leg",
     ]
     assert all(r["toolset"] == "travel" for r in registered if isinstance(r, dict))
+    blob = json.dumps([r["schema"]["description"] for r in registered if isinstance(r, dict)]).lower()
+    assert "apify" not in blob
+    assert "rl1987/" not in blob
+
+
+def test_descriptions_have_no_vendor_leak():
+    for schema in schemas.ALL:
+        d = schema["description"].lower()
+        assert "apify" not in d
+        assert "rl1987/" not in d
+
+
+def test_compare_stays_parallel(monkeypatch):
+    def fake_run(actor, payload, max_items=8):
+        if "booking" in actor:
+            return {"items": [{"name": "B Hotel", "price": 80, "reviewScore": 8}]}
+        if "agoda" in actor:
+            return {"items": [{"name": "A Hotel", "price": 70, "score": 9}]}
+        if "airbnb" in actor:
+            return {"items": [{"name": "Home", "price": 90}]}
+        if "hostel" in actor:
+            return {"items": [{"name": "Hostel", "price": 25}]}
+        return {"items": []}
+
+    monkeypatch.setattr(tools, "run_actor_and_collect", fake_run)
+    data = json.loads(
+        tools.compare_stays(
+            {
+                "destination": "Lisbon",
+                "checkin": "2026-09-01",
+                "checkout": "2026-09-03",
+                "guests": 2,
+                "lodging": "hotels",
+            }
+        )
+    )
+    assert "note" in data
+    assert "actorId" not in data
+    names = [p["name"] for p in data["picks"]]
+    assert names[0] == "A Hotel"
+    assert "Home" not in names
+
+
+def test_skip_junk_rows(monkeypatch):
+    def fake_run(actor, payload, max_items=8):
+        return {"items": [{"price": 1}, {"name": "Good Place", "price": 40}]}
+
+    monkeypatch.setattr(tools, "run_actor_and_collect", fake_run)
+    data = json.loads(
+        tools.search_booking(
+            {"destination": "Rome", "checkin": "2026-09-01", "checkout": "2026-09-02"}
+        )
+    )
+    assert len(data["picks"]) == 1
+    assert data["picks"][0]["name"] == "Good Place"
+
+
+def test_plan_leg_europe(monkeypatch):
+    seen = []
+
+    def fake_run(actor, payload, max_items=8):
+        seen.append(actor)
+        return {"items": [{"name": "Trip", "from": "Berlin", "to": "Munich", "price": 19}]}
+
+    monkeypatch.setattr(tools, "run_actor_and_collect", fake_run)
+    data = json.loads(
+        tools.plan_leg(
+            {"origin": "Berlin", "destination": "Munich", "date": "2026-12-20", "guests": 1}
+        )
+    )
+    assert any("rome2rio" in a for a in seen)
+    assert any("flixbus" in a for a in seen)
+    assert "picks" in data
+    assert "actorId" not in data
