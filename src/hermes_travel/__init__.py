@@ -1,4 +1,4 @@
-"""hermes-travel-rl1987 — trip planner tools for stays and transport."""
+"""hermes-travel — trip planner tools for stays and transport."""
 
 from pathlib import Path
 

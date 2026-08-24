@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "hermes-travel-rl1987"
+name = "hermes-travel"
 version = "0.2.0"
 description = "Trip planner for stays and transport"
 readme = "README.md"
@@ -14,13 +14,13 @@ dependencies = ["apify-client>=1.8"]
 dev = ["pytest"]
 
 [project.entry-points."hermes_agent.plugins"]
-hermes-travel-rl1987 = "hermes_travel_rl1987"
+hermes-travel = "hermes_travel"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-hermes_travel_rl1987 = ["skills/*/SKILL.md"]
+hermes_travel = ["skills/*/SKILL.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

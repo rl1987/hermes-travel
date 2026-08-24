@@ -1,4 +1,4 @@
-name: hermes-travel-rl1987
+name: hermes-travel
 version: 0.2.0
 description: Trip planner — stays and transport with comparable cards
 provides_tools:

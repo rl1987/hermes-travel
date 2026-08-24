@@ -1,4 +1,4 @@
-"""Start an rl1987 Apify Actor run and poll its dataset.
+"""Start an Actor run and poll its dataset.
 
 Uses the public HTTP API so tests can mock urllib. Actor ids use the
 ``username~name`` form in ``/v2/acts/{username}~{name}/runs``.

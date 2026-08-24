@@ -1,4 +1,4 @@
-# hermes-travel-rl1987
+# hermes-travel
 
 A Hermes trip planner for travelers. Search hotels, homes, and hostels with the same stay dates, compare lodging, and plan a transport leg — then talk about the options as cards (name, price, score, times).
 
@@ -29,8 +29,8 @@ Results are stay or transport cards (default cap 8).
 
 ```bash
 mkdir -p ~/.hermes/plugins
-cp -R /path/to/hermes-travel-rl1987 ~/.hermes/plugins/hermes-travel-rl1987
-hermes plugins enable hermes-travel-rl1987
+cp -R /path/to/hermes-travel ~/.hermes/plugins/hermes-travel
+hermes plugins enable hermes-travel
 ```
 
 Set `APIFY_API_TOKEN`. `hermes plugins install` prompts for it when missing.
@@ -38,9 +38,9 @@ Set `APIFY_API_TOKEN`. `hermes plugins install` prompts for it when missing.
 ## Pip install
 
 ```bash
-pip install /path/to/hermes-travel-rl1987
+pip install /path/to/hermes-travel
 ```
 
 ## Skill
 
-Load `skill_view("hermes-travel-rl1987:travel-trip")` for trip-planning guidance.
+Load `skill_view("hermes-travel:travel-trip")` for trip-planning guidance.

@@ -61,7 +61,7 @@ def _price_cap(args: dict, *keys: str) -> float | None:
 
 def _public_error(exc: BaseException | str) -> str:
     msg = str(exc)
-    for junk in ("actorId", "Actor ", "apify", "rl1987"):
+    for junk in ("actorId", "Actor ", "apify", "rl1987~"):
         msg = msg.replace(junk, "")
     return json.dumps({"error": msg.strip() or "search failed"})
 

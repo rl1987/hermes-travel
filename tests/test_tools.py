@@ -3,8 +3,8 @@ import os
 
 os.environ.setdefault("APIFY_API_TOKEN", "test-token")
 
-from hermes_travel_rl1987 import apify_client, schemas, tools
-from hermes_travel_rl1987.apify_client import ApifyError
+from hermes_travel import apify_client, schemas, tools
+from hermes_travel.apify_client import ApifyError
 
 
 class _FakeResp:
@@ -168,7 +168,7 @@ def test_register_tools():
         def register_skill(self, name, path):
             registered.append(("skill", name, str(path)))
 
-    from hermes_travel_rl1987 import register
+    from hermes_travel import register
 
     register(Ctx())
     names = [r["name"] for r in registered if isinstance(r, dict)]

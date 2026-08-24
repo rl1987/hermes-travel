@@ -1,4 +1,4 @@
-"""hermes-travel-rl1987 directory plugin — registration."""
+"""hermes-travel directory plugin — registration."""
 
 from pathlib import Path
 
