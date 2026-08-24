@@ -1,0 +1,19 @@
+name: hermes-travel-rl1987
+version: 0.1.0
+description: Travel toolkit wrapping only rl1987 Apify Actors
+provides_tools:
+  - search_booking
+  - search_airbnb
+  - search_agoda
+  - search_hostelworld
+  - search_flixbus
+  - search_rome2rio
+  - search_redbus
+  - changi_timetable
+requires_env:
+  - name: APIFY_API_TOKEN
+    description: Apify API token
+    url: https://console.apify.com/account/integrations
+    secret: true
+python_dependencies:
+  - "apify-client>=1.8"
