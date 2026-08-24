@@ -44,3 +44,5 @@ pip install /path/to/hermes-travel
 ## Skill
 
 Load `skill_view("hermes-travel:travel-trip")` for trip-planning guidance.
+
+Skills: `travel-trip` (master SOP), `travel-intake`, `itinerary-architecture`, `day-by-day`, `quote-and-docs`.
