@@ -46,6 +46,7 @@ def test_search_booking_mocked_http(monkeypatch):
             assert "rl1987~booking-api-scraper" in url
             body = json.loads(req.data.decode())
             assert body["search"] == "Amsterdam"
+            assert body["includeDetails"] is True
             return _FakeResp(
                 {
                     "data": {
@@ -66,7 +67,19 @@ def test_search_booking_mocked_http(monkeypatch):
                 }
             )
         if method == "GET" and "/datasets/ds1/items" in url:
-            return _FakeResp([{"name": "Hotel A", "price": 120, "url": "https://example.com/a"}])
+            # Real booking-api-scraper search-mode shape: no top-level "name" —
+            # it only appears under "details" when includeDetails is set.
+            return _FakeResp(
+                [
+                    {
+                        "id": "123",
+                        "currency": "EUR",
+                        "url": "https://example.com/a",
+                        "price": {"book": 0, "total": 120},
+                        "details": {"name": "Hotel A", "city": "Amsterdam", "reviewScore": 8.5},
+                    }
+                ]
+            )
         raise AssertionError(f"unexpected {method} {url}")
 
     monkeypatch.setattr(apify_client.time, "sleep", lambda *_: None)
@@ -200,9 +213,17 @@ def test_descriptions_have_no_vendor_leak():
 def test_compare_stays_parallel(monkeypatch):
     def fake_run(actor, payload, max_items=8):
         if "booking" in actor:
-            return {"items": [{"name": "B Hotel", "price": 80, "reviewScore": 8}]}
+            return {
+                "items": [
+                    {"id": "b1", "currency": "EUR", "price": {"total": 80}, "details": {"name": "B Hotel", "reviewScore": 8}}
+                ]
+            }
         if "agoda" in actor:
-            return {"items": [{"name": "A Hotel", "price": 70, "score": 9}]}
+            return {
+                "items": [
+                    {"name": "A Hotel", "price": {"currency": "EUR", "perStay": 70}, "reviewScore": 9}
+                ]
+            }
         if "airbnb" in actor:
             return {"items": [{"name": "Home", "price": 90}]}
         if "hostel" in actor:
@@ -268,7 +289,21 @@ def test_search_flights(monkeypatch):
     def fake_run(actor, payload, max_items=8):
         captured["actor"] = actor
         captured["payload"] = payload
-        return {"items": [{"airline": "Delta", "price": 480, "currency": "USD"}]}
+        # Real hopper-api-scraper field names are snake_case, not camelCase.
+        return {
+            "items": [
+                {
+                    "primary_carrier": "Delta",
+                    "price_total": 480,
+                    "currency": "USD",
+                    "origin": "JFK",
+                    "destination": "LAX",
+                    "departure_time": "2026-12-01T08:00:00",
+                    "arrival_time": "2026-12-01T11:00:00",
+                    "duration_minutes": 300,
+                }
+            ]
+        }
 
     monkeypatch.setattr(tools, "run_actor_and_collect", fake_run)
     data = json.loads(
@@ -279,4 +314,74 @@ def test_search_flights(monkeypatch):
     assert captured["actor"] == "rl1987~hopper-api-scraper"
     assert captured["payload"]["origin"] == "JFK"
     assert "returnDate" not in captured["payload"]
-    assert data["picks"][0]["mode"] == "flight"
+    pick = data["picks"][0]
+    assert pick["mode"] == "flight"
+    assert pick["price"] == 480
+    assert pick["from"] == "JFK"
+    assert pick["durationMin"] == 300
+
+
+def test_search_flixbus_real_shape(monkeypatch):
+    def fake_run(actor, payload, max_items=8):
+        # Real flixbus-api-scraper fields: no "name"/"price"/"from"/"to" at all.
+        return {
+            "items": [
+                {
+                    "operators": "FlixBus",
+                    "departureCityName": "Berlin",
+                    "arrivalCityName": "Munich",
+                    "departureDate": "2026-12-20T08:00:00",
+                    "arrivalDate": "2026-12-20T12:00:00",
+                    "durationMinutes": 240,
+                    "priceTotalWithFee": 29.99,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(tools, "run_actor_and_collect", fake_run)
+    data = json.loads(
+        tools.search_flixbus({"origin": "Berlin", "destination": "Munich", "date": "2026-12-20"})
+    )
+    pick = data["picks"][0]
+    assert pick["from"] == "Berlin"
+    assert pick["to"] == "Munich"
+    assert pick["price"] == 29.99
+    assert pick["currency"] == "EUR"  # actor has no currency field — falls back to requested
+
+
+def test_changi_timetable_derives_from_to(monkeypatch):
+    def fake_run(actor, payload, max_items=8):
+        return {
+            "items": [
+                {"airline": "Singapore Airlines", "direction": "dep", "airport": "NRT", "scheduled_time": "14:30"}
+            ]
+        }
+
+    monkeypatch.setattr(tools, "run_actor_and_collect", fake_run)
+    data = json.loads(tools.changi_timetable({"direction": "dep"}))
+    pick = data["picks"][0]
+    assert pick["from"] == "SIN"
+    assert pick["to"] == "NRT"
+
+
+def test_search_rome2rio_real_shape(monkeypatch):
+    def fake_run(actor, payload, max_items=8):
+        return {
+            "items": [
+                {
+                    "routeName": "London to Paris",
+                    "origin": "London",
+                    "destination": "Paris",
+                    "operators": ["Eurostar"],
+                    "priceLow": 45.0,
+                    "priceCurrency": "GBP",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(tools, "run_actor_and_collect", fake_run)
+    data = json.loads(tools.search_rome2rio({"origin": "London", "destination": "Paris"}))
+    pick = data["picks"][0]
+    assert pick["price"] == 45.0
+    assert pick["currency"] == "GBP"
+    assert pick["operator"] == "Eurostar"

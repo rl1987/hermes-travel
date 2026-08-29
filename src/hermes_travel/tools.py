@@ -73,12 +73,14 @@ def _stay_result(kind: str, payload: dict[str, Any], *, max_price: float | None 
         return _public_error(exc)
 
 
-def _transport_result(kind: str, payload: dict[str, Any]) -> str:
+def _transport_result(kind: str, payload: dict[str, Any], *, default_currency: str | None = None) -> str:
     try:
         raw = _collect(kind, payload)
         if raw.get("error"):
             return json.dumps({"error": str(raw.get("message") or raw["error"])})
-        picks = shape.shape_transport(raw.get("items") or [], kind, cap=shape.DEFAULT_CAP)
+        picks = shape.shape_transport(
+            raw.get("items") or [], kind, cap=shape.DEFAULT_CAP, default_currency=default_currency
+        )
         return json.dumps({"picks": picks})
     except Exception as exc:  # noqa: BLE001
         return _public_error(exc)
@@ -147,7 +149,10 @@ def search_booking(args: dict, **kwargs) -> str:
     payload, err, max_price = _lodging_payload_booking(args)
     if err:
         return json.dumps({"error": err})
-    return _stay_result("booking", payload or {}, max_price=max_price)
+    payload = dict(payload or {})
+    # Search mode omits property names entirely unless details are requested.
+    payload["includeDetails"] = True
+    return _stay_result("booking", payload, max_price=max_price)
 
 
 def search_airbnb(args: dict, **kwargs) -> str:
@@ -185,7 +190,8 @@ def search_flixbus(args: dict, **kwargs) -> str:
         "locale": "en",
         "currency": _ok_str(args, "currency") or "EUR",
     }
-    return _transport_result("flixbus", payload)
+    # Actor returns no currency field at all — fall back to what was requested.
+    return _transport_result("flixbus", payload, default_currency=payload["currency"])
 
 
 def search_rome2rio(args: dict, **kwargs) -> str:

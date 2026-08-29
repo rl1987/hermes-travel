@@ -1,6 +1,7 @@
 name: hermes-travel
-version: 0.2.0
+version: 0.3.0
 description: Trip planner — stays and transport with comparable cards
+status: experimental
 provides_tools:
   - search_booking
   - search_airbnb

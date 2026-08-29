@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-travel"
-version = "0.2.0"
+version = "0.3.0"
 description = "Trip planner for stays and transport"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["apify-client>=1.8"]
+classifiers = ["Development Status :: 3 - Alpha"]
 
 [project.optional-dependencies]
 dev = ["pytest"]
