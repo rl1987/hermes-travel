@@ -179,7 +179,7 @@ def test_register_tools():
         "search_hostelworld",
         "search_flixbus",
         "search_rome2rio",
-        "search_redbus",
+        "search_flights",
         "changi_timetable",
         "compare_stays",
         "plan_leg",
@@ -257,5 +257,26 @@ def test_plan_leg_europe(monkeypatch):
     )
     assert any("rome2rio" in a for a in seen)
     assert any("flixbus" in a for a in seen)
+    assert any("hopper" in a for a in seen)
     assert "picks" in data
     assert "actorId" not in data
+
+
+def test_search_flights(monkeypatch):
+    captured = {}
+
+    def fake_run(actor, payload, max_items=8):
+        captured["actor"] = actor
+        captured["payload"] = payload
+        return {"items": [{"airline": "Delta", "price": 480, "currency": "USD"}]}
+
+    monkeypatch.setattr(tools, "run_actor_and_collect", fake_run)
+    data = json.loads(
+        tools.search_flights(
+            {"origin": "JFK", "destination": "LAX", "date": "2026-12-01"}
+        )
+    )
+    assert captured["actor"] == "rl1987~hopper-api-scraper"
+    assert captured["payload"]["origin"] == "JFK"
+    assert "returnDate" not in captured["payload"]
+    assert data["picks"][0]["mode"] == "flight"

@@ -13,7 +13,7 @@ _TOOLS = [
     ("search_hostelworld", schemas.SEARCH_HOSTELWORLD, tools.search_hostelworld),
     ("search_flixbus", schemas.SEARCH_FLIXBUS, tools.search_flixbus),
     ("search_rome2rio", schemas.SEARCH_ROME2RIO, tools.search_rome2rio),
-    ("search_redbus", schemas.SEARCH_REDBUS, tools.search_redbus),
+    ("search_flights", schemas.SEARCH_FLIGHTS, tools.search_flights),
     ("changi_timetable", schemas.CHANGI_TIMETABLE, tools.changi_timetable),
     ("compare_stays", schemas.COMPARE_STAYS, tools.compare_stays),
     ("plan_leg", schemas.PLAN_LEG, tools.plan_leg),

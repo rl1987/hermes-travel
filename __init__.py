@@ -7,20 +7,6 @@ try:
 except ImportError:
     schemas = tools = None  # type: ignore
 
-_TOOL_NAMES = [
-    "search_booking",
-    "search_airbnb",
-    "search_agoda",
-    "search_hostelworld",
-    "search_flixbus",
-    "search_rome2rio",
-    "search_redbus",
-    "changi_timetable",
-    "compare_stays",
-    "plan_leg",
-]
-
-
 def register(ctx):
     if schemas is None or tools is None:
         raise ImportError("plugin must be imported as a package")
@@ -31,7 +17,7 @@ def register(ctx):
         (schemas.SEARCH_HOSTELWORLD, tools.search_hostelworld),
         (schemas.SEARCH_FLIXBUS, tools.search_flixbus),
         (schemas.SEARCH_ROME2RIO, tools.search_rome2rio),
-        (schemas.SEARCH_REDBUS, tools.search_redbus),
+        (schemas.SEARCH_FLIGHTS, tools.search_flights),
         (schemas.CHANGI_TIMETABLE, tools.changi_timetable),
         (schemas.COMPARE_STAYS, tools.compare_stays),
         (schemas.PLAN_LEG, tools.plan_leg),

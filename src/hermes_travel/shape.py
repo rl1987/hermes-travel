@@ -7,7 +7,7 @@ from typing import Any
 
 DEFAULT_CAP = 8
 STAY_SOURCES = frozenset({"booking", "airbnb", "agoda", "hostelworld"})
-TRANSPORT_SOURCES = frozenset({"flixbus", "rome2rio", "redbus", "changi"})
+TRANSPORT_SOURCES = frozenset({"flixbus", "rome2rio", "flights", "changi"})
 
 EUROPE_HINTS = (
     "europe", "eu ", " uk", "united kingdom", "england", "scotland", "wales",
@@ -21,12 +21,6 @@ EUROPE_HINTS = (
     "finland", "helsinki", "greece", "athens", "croatia", "zagreb", "split",
     "romania", "bucharest", "bulgaria", "sofia", "slovakia", "slovenia",
     "estonia", "latvia", "lithuania", "vilnius", "riga", "tallinn",
-)
-
-INDIA_SG_HINTS = (
-    "india", "indian", "mumbai", "delhi", "bengaluru", "bangalore", "chennai",
-    "hyderabad", "kolkata", "pune", "goa", "jaipur", "ahmedabad", "kochi",
-    "singapore", "malaysia", "kuala lumpur", "johor", "penang", "klia",
 )
 
 CHANGI_HINTS = ("singapore", "changi", "sin airport", "airport sin", "sin,", "sin ")
@@ -93,11 +87,6 @@ def looks_european(*places: str) -> bool:
     return any(h in blob for h in EUROPE_HINTS)
 
 
-def looks_india_or_sg(*places: str) -> bool:
-    blob = " ".join(p.lower() for p in places if p)
-    return any(h in blob for h in INDIA_SG_HINTS)
-
-
 def looks_changi(*places: str) -> bool:
     blob = " ".join((" " + p.lower() + " ") for p in places if p)
     return any(h in blob or "chang" in blob and "sing" in blob for h in CHANGI_HINTS) or " sin" in blob or blob.strip().endswith("sin") or "changi" in blob or "singapore" in blob
@@ -149,7 +138,7 @@ def extract_transport(row: Any, source: str, idx: int = 0) -> dict[str, Any] | N
     if not name:
         return None
     mode = (_s(row, "mode", "vehicle", "transportType", "kind") or (
-        "flight" if source == "changi" else "bus" if source in {"flixbus", "redbus"} else "route"
+        "flight" if source in {"changi", "flights"} else "bus" if source == "flixbus" else "route"
     )).lower()
     src = source if source in TRANSPORT_SOURCES else "rome2rio"
     card: dict[str, Any] = {

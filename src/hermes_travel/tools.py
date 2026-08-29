@@ -6,7 +6,7 @@ import asyncio
 import json
 from typing import Any, Callable
 
-from .apify_client import MAX_ITEMS, run_actor_and_collect
+from .apify_client import run_actor_and_collect
 from . import shape
 
 # Private internal map — never expose ids to the model.
@@ -17,19 +17,9 @@ _ACTORS = {
     "hostelworld": "rl1987~hostelworld-api-scraper",
     "flixbus": "rl1987~flixbus-api-scraper",
     "rome2rio": "rl1987~rome2rio-api-scraper",
-    "redbus": "rl1987~redbus-api-scraper",
+    "flights": "rl1987~hopper-api-scraper",
     "changi": "rl1987~sin-airport-timetable",
 }
-
-
-def _cap(value: Any, default: int = shape.DEFAULT_CAP) -> int:
-    try:
-        n = int(value)
-    except (TypeError, ValueError):
-        return default
-    if n <= 0:
-        return default
-    return min(n, MAX_ITEMS, shape.DEFAULT_CAP)
 
 
 def _ok_str(args: dict, *keys: str) -> str | None:
@@ -219,21 +209,24 @@ def search_rome2rio(args: dict, **kwargs) -> str:
     return _transport_result("rome2rio", payload)
 
 
-def search_redbus(args: dict, **kwargs) -> str:
-    origin = _ok_str(args, "origin", "source")
+def search_flights(args: dict, **kwargs) -> str:
+    origin = _ok_str(args, "origin")
     dest = _ok_str(args, "destination")
-    date = _ok_str(args, "date", "dateOfJourney")
+    date = _ok_str(args, "date", "departureDate")
     if not origin or not dest or not date:
         return json.dumps({"error": "Need origin, destination, and date"})
-    payload = {
-        "source": origin,
+    payload: dict[str, Any] = {
+        "origin": origin,
         "destination": dest,
-        "dateOfJourney": date,
-        "country": "india" if shape.looks_india_or_sg(origin, dest) and "sing" not in (origin + dest).lower() else "singapore" if "sing" in (origin + dest).lower() else "india",
+        "departureDate": date,
+        "adults": _int(args, "guests", _int(args, "adults", 1)),
+        "includePrediction": False,
         "maxItems": shape.DEFAULT_CAP,
-        "pageSize": shape.DEFAULT_CAP,
     }
-    return _transport_result("redbus", payload)
+    return_date = _ok_str(args, "return_date", "returnDate")
+    if return_date:
+        payload["returnDate"] = return_date
+    return _transport_result("flights", payload)
 
 
 def changi_timetable(args: dict, **kwargs) -> str:
@@ -303,11 +296,9 @@ def plan_leg(args: dict, **kwargs) -> str:
     date = _ok_str(args, "date")
     if not origin or not dest or not date:
         return json.dumps({"error": "Need origin, destination, and date"})
-    fns: list[Callable[[], str]] = [lambda: search_rome2rio(args)]
+    fns: list[Callable[[], str]] = [lambda: search_rome2rio(args), lambda: search_flights(args)]
     if shape.looks_european(origin, dest):
         fns.append(lambda: search_flixbus(args))
-    if shape.looks_india_or_sg(origin, dest):
-        fns.append(lambda: search_redbus(args))
     if shape.looks_changi(origin, dest):
         fns.append(lambda: changi_timetable(args))
 
@@ -332,7 +323,7 @@ HANDLERS: dict[str, Callable] = {
     "search_hostelworld": search_hostelworld,
     "search_flixbus": search_flixbus,
     "search_rome2rio": search_rome2rio,
-    "search_redbus": search_redbus,
+    "search_flights": search_flights,
     "changi_timetable": changi_timetable,
     "compare_stays": compare_stays,
     "plan_leg": plan_leg,

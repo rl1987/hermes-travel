@@ -8,7 +8,7 @@ provides_tools:
   - search_hostelworld
   - search_flixbus
   - search_rome2rio
-  - search_redbus
+  - search_flights
   - changi_timetable
   - compare_stays
   - plan_leg

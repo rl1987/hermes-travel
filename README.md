@@ -15,7 +15,7 @@ Transport:
 
 - `search_flixbus` — Coach buses (Europe-focused)
 - `search_rome2rio` — Door-to-door routes
-- `search_redbus` — Intercity buses (India and nearby)
+- `search_flights` — Flights, worldwide
 - `changi_timetable` — Singapore Changi arrivals/departures
 
 Orchestrators:

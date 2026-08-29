@@ -101,18 +101,20 @@ SEARCH_ROME2RIO = {
     },
 }
 
-SEARCH_REDBUS = {
-    "name": "search_redbus",
+SEARCH_FLIGHTS = {
+    "name": "search_flights",
     "description": (
-        "Find intercity buses in India and nearby markets between two cities on a date."
+        "Find flights between two airports or cities on a date, worldwide. "
+        "One-way by default; pass return_date for a round trip."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "origin": {"type": "string", "description": "Origin city"},
-            "destination": {"type": "string", "description": "Destination city"},
-            "date": {"type": "string", "description": "Travel date YYYY-MM-DD"},
-            "currency": {"type": "string", "default": "INR"},
+            "origin": {"type": "string", "description": "Origin airport or city"},
+            "destination": {"type": "string", "description": "Destination airport or city"},
+            "date": {"type": "string", "description": "Departure date YYYY-MM-DD"},
+            "return_date": {"type": "string", "description": "Return date YYYY-MM-DD for a round trip"},
+            "guests": {"type": "integer", "description": "Adult passengers", "default": 1},
         },
         "required": ["origin", "destination", "date"],
     },
@@ -164,8 +166,8 @@ COMPARE_STAYS = {
 PLAN_LEG = {
     "name": "plan_leg",
     "description": (
-        "Plan one travel leg: always compare door-to-door routes, plus coaches or "
-        "airport timetable when origin/destination suggest Europe, India, or Singapore."
+        "Plan one travel leg: always compare door-to-door routes and flights, plus coaches "
+        "or airport timetable when origin/destination suggest Europe or Singapore."
     ),
     "parameters": {
         "type": "object",
@@ -186,7 +188,7 @@ ALL = [
     SEARCH_HOSTELWORLD,
     SEARCH_FLIXBUS,
     SEARCH_ROME2RIO,
-    SEARCH_REDBUS,
+    SEARCH_FLIGHTS,
     CHANGI_TIMETABLE,
     COMPARE_STAYS,
     PLAN_LEG,
